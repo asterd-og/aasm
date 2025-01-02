@@ -1,7 +1,7 @@
 import sys
 from enum import Enum
 
-TokenType = Enum("TokenType", "Eof Add Sub Mul Div Mov Jmp Rel Push Pop Call Ret And Or Xor Not Shl Shr Org Id Define Res Reg Num Comma LBrac RBrac Colon Plus Minus")
+TokenType = Enum("TokenType", "Eof Add Sub Mul Div Mov Jmp Rel Push Pop Call Ret And Or Xor Not Shl Shr Sei Sdi Int Org Id Str Define Res Reg Num Comma LBrac RBrac Colon Plus Minus PreProc")
 
 class OpCodes(Enum):
     Nop =  0b000000
@@ -21,6 +21,9 @@ class OpCodes(Enum):
     Not =  0b001110
     Shl =  0b001111
     Shr =  0b010000
+    Sei =  0b010001
+    Sdi =  0b010010
+    Int =  0b010011
 
 def NewToken(Type, Value, Position):
     return (Type, Value, Position)
@@ -44,7 +47,10 @@ def CreateKeywords():
                   "jz": TokenType.Jmp,
                   "rel": TokenType.Rel,
                   "call": TokenType.Call,
-                  "ret": TokenType.Ret}
+                  "ret": TokenType.Ret,
+                  "sei": TokenType.Sei,
+                  "sdi": TokenType.Sdi,
+                  "int": TokenType.Int}
     for Keyword in PrefixKw:
         for i in ["8", "16", "32", "64"]:
             Keywords[f"{Keyword}{i}"] = PrefixKw[Keyword]
@@ -59,6 +65,7 @@ def CreateKeywords():
     Keywords["ip"] = TokenType.Reg
     Keywords["flags"] = TokenType.Reg
     Keywords["pgtbl"] = TokenType.Reg
+    Keywords["ivtbl"] = TokenType.Reg
     Keywords["err"] = TokenType.Reg
 
 def Tokenize(Input):
@@ -103,13 +110,42 @@ def Tokenize(Input):
                 Index += 1
             Tokens.append(NewToken(TokenType.Num, Num, (Position[0], Position[1])))
             Position[1] += len(Num)
+        elif Input[Index] == '"':
+            Str = ""
+            Index += 1
+            Position[1] += 1
+            while Input[Index] != '"':
+                if Input[Index] in '\n\r':
+                    print(f"Unexpected new line at string {Position[0]}:{Position[1]}")
+                    exit(1)
+                Str += Input[Index]
+                Position[1] += 1
+                Index += 1
+            Index += 1
+            Position[1] += 1
+            Tokens.append(NewToken(TokenType.Str, Str, (Position[0], Position[1])))
         elif Input[Index] == ';':
             while Input[Index] != '\n':
                 Index += 1
+        elif Input[Index] == '%':
+            Index += 1
+            Position[1] += 1
+            Id = ""
+            while ('a' <= Input[Index] <= 'z'
+                   or 'A' <= Input[Index] <= 'Z'
+                   or '0' <= Input[Index] <= '9'
+                   or Input[Index] == '_' or Input[Index] == '.'):
+                Id += Input[Index]
+                Index += 1
+            Tokens.append(NewToken(TokenType.PreProc, Id.lower(), (Position[0], Position[1] - 1)))
+            Position[1] += len(Num)
         elif Input[Index] in SingleChars:
             Tokens.append(NewToken(SingleChars[Input[Index]], Input[Index], (Position[0], Position[1])))
             Index += 1
             Position[1] += 1
+        else:
+            print(f"Unexpected token at {Position[0]}:{Position[1]}")
+            exit(1)
     Tokens.append(NewToken(TokenType.Eof, "", (Position[0], Position[1])))
     return Tokens
 
@@ -118,7 +154,7 @@ class Parser:
         self.Tokens = Tokens
         self.Index = -1
         self.Sizes = {"8": 0, "16": 1, "32": 2, "64": 3}
-        self.Registers = {"sp": 11, "fp": 12, "ip": 13, "flags": 14, "pgtbl": 15, "err": 16}
+        self.Registers = {"sp": 11, "fp": 12, "ip": 13, "flags": 14, "pgtbl": 15, "ivtbl": 16}
         for i in range(11):
             self.Registers[f"g{i}"] = i
         self.Program = []
@@ -192,13 +228,7 @@ class Parser:
         Instruction |= Flags
         return Instruction
 
-    def GetId(self, Id, Size):
-        if Id not in self.Labels:
-            self.QueuedLabels[self.ProgramIndex] = (Id, Size) # Queue label
-            return 0
-        return self.Labels[Id]
-
-    def HandleDst(self, InstFlags, Size):
+    def HandleDst(self, InstFlags):
         InstDstTok = self.Consume()
         InstDst = 0
         Dst = 0
@@ -238,7 +268,7 @@ class Parser:
             self.Error("Unexpected destination.")
         return (InstDst, Dst, DstOff, InstFlags)
 
-    def HandleSrc(self, InstFlags, Size):
+    def HandleSrc(self, InstFlags):
         InstSrcTok = self.Consume()
         InstSrc = 0
         Src = 0
@@ -284,11 +314,10 @@ class Parser:
 
     def HandleOpInst(self, Token, OpCode, TwoLetterInst):
         InstSize = self.Sizes[Token[1][(2 if TwoLetterInst else 3):5]]
-        Size = 1 << InstSize
         InstFlags = 0
-        InstDst, Dst, DstOff, InstFlags = self.HandleDst(InstFlags, Size)
+        InstDst, Dst, DstOff, InstFlags = self.HandleDst(InstFlags)
         self.Eat(TokenType.Comma)
-        InstSrc, Src, SrcOff, InstFlags = self.HandleSrc(InstFlags, Size)
+        InstSrc, Src, SrcOff, InstFlags = self.HandleSrc(InstFlags)
 
         Instruction = self.Instruction(InstSize, OpCode, InstSrc, InstDst, InstFlags)
         self.Write16(Instruction)
@@ -402,8 +431,8 @@ class Parser:
         self.Write16(Instruction)
         self.Write64(Addr)
 
-    def HandleRet(self, Token):
-        Instruction = self.Instruction(3, OpCodes.Ret, 0, 0, 0)
+    def HandleSimpleInst(self, Token, OpCode):
+        Instruction = self.Instruction(3, OpCode, 0, 0, 0)
         self.Write16(Instruction)
 
     def HandleNot(self, Token):
@@ -424,16 +453,58 @@ class Parser:
         else:
             self.Write64(Dst)
 
+    def HandleInt(self, Token):
+        InstSrc, Src, SrcOff, InstFlags = self.HandleSrc(0)
+
+        Instruction = self.Instruction(0, OpCodes.Int, InstSrc, 0, InstFlags)
+        self.Write16(Instruction)
+
+        if InstFlags & 0b0001:
+            if InstFlags & 0b0100:
+                self.Write8(SrcOff) # Reg src off
+            else:
+                self.Write64(SrcOff)
+        if InstSrc != 3:
+            self.Write8(Src)
+        else:
+            self.Write64(Src)
+    
     def HandleDefine(self, Token):
         WSize = self.Sizes[Token[1][1:3]]
-        Data = self.Eat(TokenType.Num)
-        self.Write(self.GetInt(Data[1]), WSize)
+        Data = self.Consume()
+        Def = 0
+        if Data[0] == TokenType.Id:
+            Label = Data[1]
+            if Label not in self.Labels:
+                Def = Label
+            else:
+                Def = self.Labels[Label]
+        elif Data[0] == TokenType.Str:
+            String = Data[1]
+            for Char in String:
+                self.Write(ord(Char), WSize)
+            return
+        else:
+            Def = self.GetInt(Data[1])
+        self.Write(Def, WSize)
 
     def HandleRes(self, Token):
         WSize = self.Sizes[Token[1][3:5]]
         Count = self.GetInt(self.Eat(TokenType.Num)[1])
-        for i in range(Count):
-            self.Write(0, WSize)
+        self.Program.extend([0] * ((1 << WSize) * Count))
+
+    def HandlePreProc(self, Token):
+        if Token[1] == "include":
+            Name = self.Eat(TokenType.Str)
+            try:
+                File = open(Name[1], "r")
+            except FileNotFoundError:
+                self.Error(f"Couldn't find file {Name[1]}")
+            Tokens = Tokenize(File.read())
+            self.Tokens.pop(len(self.Tokens) - 1) # Remove EOF
+            Tokens.pop(len(Tokens) - 1) # Remove Eof
+            self.Tokens[self.Index + 1:self.Index + 1] = Tokens
+            self.Tokens.append((TokenType.Eof, "", (0, 0)))
 
     def ParsePostamble(self):
         for i in range(len(self.Program)):
@@ -473,7 +544,7 @@ class Parser:
             elif Token[0] == TokenType.Call:
                 self.HandleCall(Token)
             elif Token[0] == TokenType.Ret:
-                self.HandleRet(Token)
+                self.HandleSimpleInst(Token, OpCodes.Ret)
             elif Token[0] == TokenType.And:
                 self.HandleOpInst(Token, OpCodes.And, False)
             elif Token[0] == TokenType.Or:
@@ -486,12 +557,20 @@ class Parser:
                 self.HandleOpInst(Token, OpCodes.Shl, False)
             elif Token[0] == TokenType.Shr:
                 self.HandleOpInst(Token, OpCodes.Shr, False)
+            elif Token[0] == TokenType.Sei:
+                self.HandleSimpleInst(Token, OpCodes.Sei)
+            elif Token[0] == TokenType.Sdi:
+                self.HandleSimpleInst(Token, OpCodes.Sdi)
+            elif Token[0] == TokenType.Int:
+                self.HandleInt(Token)
             elif Token[0] == TokenType.Define:
                 self.HandleDefine(Token)
             elif Token[0] == TokenType.Res:
                 self.HandleRes(Token) # Reserve
             elif Token[0] == TokenType.Org:
                 self.HandleOrg(Token)
+            elif Token[0] == TokenType.PreProc:
+                self.HandlePreProc(Token)
             elif Token[0] == TokenType.Id:
                 if self.Tokens[self.Index + 1][0] == TokenType.Colon:
                     self.HandleLabel(Token)
@@ -514,6 +593,5 @@ if __name__ == "__main__":
     Tokens = Tokenize(InputFile.read())
     LocalParser = Parser(Tokens)
     LocalParser.Parse()
-    print(LocalParser.Program)
     with open(sys.argv[2], "wb") as Out:
         Out.write(bytearray(LocalParser.Program))
