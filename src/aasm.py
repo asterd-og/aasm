@@ -1,7 +1,7 @@
 import sys
 from enum import Enum
 
-TokenType = Enum("TokenType", "Eof Add Sub Mul Div Mov Jmp Rel Push Pop Call Ret And Or Xor Not Shl Shr Sei Sdi Int Org Id Str Define Res Reg Num Comma LBrac RBrac Colon Plus Minus PreProc")
+TokenType = Enum("TokenType", "Eof Add Sub Mul Div Mov Jmp Rel Push Pop Call Ret And Or Xor Not Shl Shr Sei Sdi Int Cmp Org Id Str Define Res Reg Num Comma LBrac RBrac Colon Plus Minus PreProc")
 
 class OpCodes(Enum):
     Nop =  0b000000
@@ -24,6 +24,7 @@ class OpCodes(Enum):
     Sei =  0b010001
     Sdi =  0b010010
     Int =  0b010011
+    Cmp =  0b010100
 
 def NewToken(Type, Value, Position):
     return (Type, Value, Position)
@@ -40,11 +41,16 @@ def CreateKeywords():
                 "and": TokenType.And, "or": TokenType.Or,
                 "xor": TokenType.Xor, "not": TokenType.Not,
                 "shl": TokenType.Shl, "shr": TokenType.Shr,
-                "res": TokenType.Res}
+                "res": TokenType.Res, "cmp": TokenType.Cmp}
     NoPrefixKw = {"org": TokenType.Org,
                   "jmp": TokenType.Jmp,
                   "jc": TokenType.Jmp,
                   "jz": TokenType.Jmp,
+                  "je": TokenType.Jmp,
+                  "jg": TokenType.Jmp,
+                  "jge": TokenType.Jmp,
+                  "jl": TokenType.Jmp,
+                  "jle": TokenType.Jmp,
                   "rel": TokenType.Rel,
                   "call": TokenType.Call,
                   "ret": TokenType.Ret,
@@ -394,8 +400,16 @@ class Parser:
         CondFlags = 0
         if Token[1] == "jc":
             CondFlags |= 0b00000010
-        elif Token[1] == "jz":
+        elif Token[1] == "jz" or Token[1] == "je":
             CondFlags |= 0b00000100
+        elif Token[1] == "jg":
+            CondFlags |= 0b00001000
+        elif Token[1] == "jge":
+            CondFlags |= 0b00001100
+        elif Token[1] == "jl":
+            CondFlags |= 0b00010000
+        elif Token[1] == "jle":
+            CondFlags |= 0b00010100
         if self.Peek()[0] == TokenType.Rel:
             self.Consume()
             CondFlags |= 0b00000001
@@ -563,6 +577,8 @@ class Parser:
                 self.HandleSimpleInst(Token, OpCodes.Sdi)
             elif Token[0] == TokenType.Int:
                 self.HandleInt(Token)
+            elif Token[0] == TokenType.Cmp:
+                self.HandleOpInst(Token, OpCodes.Cmp, False)
             elif Token[0] == TokenType.Define:
                 self.HandleDefine(Token)
             elif Token[0] == TokenType.Res:

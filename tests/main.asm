@@ -1,19 +1,36 @@
-    ORG 0
-    MOV64 SP, stackTop
-    CALL serial_init
-    MOV64 G1, str
-    CALL serial_write
-    JMP exit
+    ORG 0x0
+    MOV64 SP, STK_TOP
+    MOV64 G0, 0xB010
+    MOV64 G1, 0
+OUTER_LOOP:
+    CMP64 G1, 640
+    JGE EXIT
+    MOV64 G2, 0
+INNER_LOOP:
+    CMP64 G2, 480
+    JGE END_INNER_LOOP
+    ;; J * 640 + I
+    MOV64 G3, G2
+    MUL64 G3, 640
+    ADD64 G3, G1
+    ;; I * J + 0xFF00FF00
+    MOV32 G4, G1
+    MUL32 G4, G2
+    ADD32 G4, 0xFF00FF00
+    ;; G3 * 4
+    MUL64 G3, 4
+    MOV32 [G0+G3], G4
+    ;; J++
+    ADD64 G2, 1
+    JMP INNER_LOOP
+END_INNER_LOOP:
+    ADD64 G1, 1
+    JMP OUTER_LOOP
 
-%INCLUDE "tests/serial.asm"
-
-stackBottom:
+STK_BOTTOM:
     RES8 1024
-stackTop:
+STK_TOP:
     D8 0
 
-str:
-    D8 "Hello World from debugger!"
-    D8 0
-
-exit:   
+EXIT:
+    ;; 
