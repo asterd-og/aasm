@@ -1,7 +1,7 @@
 import sys
 from enum import Enum
 
-TokenType = Enum("TokenType", "Eof Add Sub Mul Div Mov Jmp Rel Push Pop Call Ret And Or Xor Not Shl Shr Sei Sdi Int Cmp Org Id Str Define Res Reg Num Comma LBrac RBrac Colon Plus Minus PreProc")
+TokenType = Enum("TokenType", "Eof Add Sub Mul Div Rem Mov Jmp Rel Push Pop Call Ret And Or Xor Not Shl Shr Sei Sdi Int Cmp Org Id Str Define Res Reg Num Comma LBrac RBrac Colon Plus Minus PreProc")
 
 class OpCodes(Enum):
     Nop =  0b000000
@@ -25,6 +25,7 @@ class OpCodes(Enum):
     Sdi =  0b010010
     Int =  0b010011
     Cmp =  0b010100
+    Rem =  0b010101
 
 def NewToken(Type, Value, Position):
     return (Type, Value, Position)
@@ -32,21 +33,23 @@ def NewToken(Type, Value, Position):
 Keywords = {}
 SingleChars = {',': TokenType.Comma, '[': TokenType.LBrac, ']': TokenType.RBrac,
                '+': TokenType.Plus, '-': TokenType.Minus, ':': TokenType.Colon}
+PrefixKw = {"add": TokenType.Add, "sub": TokenType.Sub,
+            "mul": TokenType.Mul, "div": TokenType.Div,
+            "mov": TokenType.Mov, "push": TokenType.Push,
+            "pop": TokenType.Pop, "d": TokenType.Define,
+            "and": TokenType.And, "or": TokenType.Or,
+            "xor": TokenType.Xor, "not": TokenType.Not,
+            "shl": TokenType.Shl, "shr": TokenType.Shr,
+            "res": TokenType.Res, "cmp": TokenType.Cmp,
+            "rem": TokenType.Rem}
 Macros = {}
 def CreateKeywords():
-    PrefixKw = {"add": TokenType.Add, "sub": TokenType.Sub,
-                "mul": TokenType.Mul, "div": TokenType.Div,
-                "mov": TokenType.Mov, "push": TokenType.Push,
-                "pop": TokenType.Pop, "d": TokenType.Define,
-                "and": TokenType.And, "or": TokenType.Or,
-                "xor": TokenType.Xor, "not": TokenType.Not,
-                "shl": TokenType.Shl, "shr": TokenType.Shr,
-                "res": TokenType.Res, "cmp": TokenType.Cmp}
     NoPrefixKw = {"org": TokenType.Org,
                   "jmp": TokenType.Jmp,
                   "jc": TokenType.Jmp,
                   "jz": TokenType.Jmp,
                   "je": TokenType.Jmp,
+                  "jne": TokenType.Jmp,
                   "jg": TokenType.Jmp,
                   "jge": TokenType.Jmp,
                   "jl": TokenType.Jmp,
@@ -75,6 +78,7 @@ def CreateKeywords():
     Keywords["err"] = TokenType.Reg
 
 def Tokenize(Input):
+    Input += "\n"
     Tokens = []
     Index = 0
     Position = [1, 1] # Row, Column
@@ -402,6 +406,8 @@ class Parser:
             CondFlags |= 0b00000010
         elif Token[1] == "jz" or Token[1] == "je":
             CondFlags |= 0b00000100
+        elif Token[1] == "jne":
+            CondFlags |= 0b00011000
         elif Token[1] == "jg":
             CondFlags |= 0b00001000
         elif Token[1] == "jge":
@@ -547,6 +553,8 @@ class Parser:
                 self.HandleOpInst(Token, OpCodes.Mul, False)
             elif Token[0] == TokenType.Div:
                 self.HandleOpInst(Token, OpCodes.Div, False)
+            elif Token[0] == TokenType.Rem:
+                self.HandleOpInst(Token, OpCodes.Rem, False)
             elif Token[0] == TokenType.Mov:
                 self.HandleOpInst(Token, OpCodes.Mov, False)
             elif Token[0] == TokenType.Jmp:
@@ -591,7 +599,10 @@ class Parser:
                 if self.Tokens[self.Index + 1][0] == TokenType.Colon:
                     self.HandleLabel(Token)
                 else:
-                    self.Error("Unexpected Id.")
+                    if Token[1].lower() in PrefixKw:
+                        self.Error(f"Unexpected Id. Maybe you forgot the size prefix? ({Token[1]}8, {Token[1]}16, {Token[1]}32, {Token[1]}64)")
+                    else:
+                        self.Error("Unexpected Id.")
             else:
                 if Token[0] != TokenType.Eof:
                     self.Error("Unexpected statement.")
