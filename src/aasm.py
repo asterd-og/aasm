@@ -154,7 +154,7 @@ def Tokenize(Input):
             Index += 1
             Position[1] += 1
         else:
-            print(f"Unexpected token at {Position[0]}:{Position[1]}")
+            print(f"Unexpected character {Input[Index]} at {Position[0]}:{Position[1]}")
             exit(1)
     Tokens.append(NewToken(TokenType.Eof, "", (Position[0], Position[1])))
     return Tokens
