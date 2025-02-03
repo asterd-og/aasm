@@ -1,0 +1,42 @@
+    MOV64 SP, STK_TOP
+    MOV64 G0, FMSG
+    CALL PRINT
+    ; Load kernel from disk 0 to 0x30000
+    MOV32 [0x20000], 0 ; SELECT
+    MOV32 [0x20018], BUFFER
+    MOV32 [0x20006], 3 ; INFO
+LOOP1:
+    CMP8 [0x20004], 8
+    JE DONE1
+    JMP LOOP1
+DONE1:
+    MOV64 G0, [BUFFER+32]
+    MOV64 G1, SECTOR_BUF
+    CALL ITOA
+    MOV64 G0, SECTOR_BUF
+    CALL PRINT
+    MOV64 G0, SCMSG
+    CALL PRINT
+
+    MOV64 [0x20008], 0 ; SECTOR
+    MOV64 [0x20010], [BUFFER+32] ; COUNT
+    MOV64 [0x20018], 0x30000 ; BUFFER
+    MOV8 [0x20006], 1 ; COMMAND (read)
+LOOP2:
+    CMP8 [0x20004], 8 ; DONE
+    JE DONE2
+    JMP LOOP2
+DONE2:
+    JMP 0x30000
+
+BUFFER: RES8 1024
+
+FMSG: D8 "Firmware By Astrido loading kernel from Disk 0..." D8 10 D8 0 
+SCMSG: D8 " Sectors detected." D8 10 D8 0
+SECTOR_BUF: RES8 32
+
+STK_BOTTOM: RES8 1024
+STK_TOP: D8 0
+
+%INCLUDE "string.asm"
+%INCLUDE "terminal.asm"

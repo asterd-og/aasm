@@ -1,4 +1,5 @@
 import sys
+import os
 from enum import Enum
 
 TokenType = Enum("TokenType", "Eof Add Sub Mul Div Rem Mov Jmp Rel Push Pop Call Ret And Or Xor Not Shl Shr Sei Sdi Int Cmp Org Id Str Define Res Reg Num Comma LBrac RBrac Colon Plus Minus PreProc")
@@ -108,14 +109,24 @@ def Tokenize(Input):
             Position[1] += len(Id)
         elif '0' <= Input[Index] <= '9':
             Hex = False
+            Bin = False
             Num = ""
             if Input[Index + 1].lower() == 'x':
                 Hex = True
                 Index += 2
                 Num += "0x"
+            elif Input[Index + 1].lower() == 'b':
+                Bin = True
+                Index += 2
+                Num += "0b"
             while ('a' <= Input[Index] <= 'f'
                    or 'A' <= Input[Index] <= 'F'
                    or '0' <= Input[Index] <= '9'):
+                if Bin:
+                    if Input[Index] > '1':
+                        Position[1] += len(Num)
+                        print(f"Unexpected non-binary (0 or 1) character while consuming binary number at {Position[0]}:{Position[1]}")
+                        exit(1)
                 Num += Input[Index]
                 Index += 1
             Tokens.append(NewToken(TokenType.Num, Num, (Position[0], Position[1])))
@@ -194,6 +205,8 @@ class Parser:
     def GetInt(self, Int):
         if len(Int) > 2 and Int[1].lower() == 'x':
             return int(Int, 16)
+        elif len(Int) > 2 and Int[1].lower() == 'b':
+            return int(Int, 2)
         return int(Int)
 
     def Write8(self, Value):
@@ -615,10 +628,14 @@ if __name__ == "__main__":
     if len(sys.argv) < 3:
         print("Expected Output Name")
         exit(1)
+    old_dir = os.getcwd()
     InputFile = open(sys.argv[1], "r")
+    directory = os.path.dirname(sys.argv[1])
+    os.chdir(directory)
     CreateKeywords()
     Tokens = Tokenize(InputFile.read())
     LocalParser = Parser(Tokens)
     LocalParser.Parse()
+    os.chdir(old_dir)
     with open(sys.argv[2], "wb") as Out:
         Out.write(bytearray(LocalParser.Program))

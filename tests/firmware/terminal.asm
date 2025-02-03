@@ -2,11 +2,13 @@ UPDATE_CURSOR:
     MOV32 [0xB000], [CURSOR_X]
     MOV32 [0xB004], [CURSOR_Y]
     RET
+
 PUT_CHAR:
     ; X = G1
     ; Y = G2
     ; CH = G3
     PUSH64 G4
+    MOV64 G4, 0
     ; Y*WIDTH+X
     MOV32 G4, G2
     MUL32 G4, 80
@@ -14,8 +16,19 @@ PUT_CHAR:
     MOV8 [0xB010+G4], G3
     POP64 G4
     RET
+
+NEWLINE:
+    ; TODO: Check for scroll
+    MOV32 [CURSOR_X], 0
+    ADD32 [CURSOR_Y], 1
+    CALL UPDATE_CURSOR
+    RET
+
 PRINT:
     ; STR = G0
+    PUSH64 G1
+    PUSH64 G2
+    PUSH64 G3
 PRINT_LOOP:
     CMP8 [G0], 0
     JE PRINT_EXIT
@@ -30,12 +43,14 @@ PRINT_LOOP:
     ADD64 G0, 1
     JMP PRINT_LOOP
 PRINT_NL:
-    ADD32 [CURSOR_Y], 1
-    MOV32 [CURSOR_X], 0
-    CALL UPDATE_CURSOR
+    CALL NEWLINE
     ADD64 G0, 1
     JMP PRINT_LOOP
 PRINT_EXIT:
+    POP64 G3
+    POP64 G2
+    POP64 G1
     RET
+
 CURSOR_X: D32 0
 CURSOR_Y: D32 0
