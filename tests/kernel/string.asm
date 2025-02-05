@@ -34,6 +34,8 @@ COUNT_NUMS_EXIT:
 ITOA:
     ; G0 = NUM
     ; G1 = BUFFER
+    CMP64 G0, 0
+    JE ITOA_ZERO
     PUSH64 G2
     PUSH64 G3
     CALL COUNT_NUMS
@@ -51,7 +53,31 @@ ITOA_LOOP:
     SUB64 G2, 1
     DIV64 G0, 10
     JMP ITOA_LOOP
+ITOA_ZERO:
+    MOV8 [G1], 48
+    MOV8 [G1+1], 0
+    RET
 ITOA_EXIT:
     POP64 G3
+    POP64 G2
+    RET
+
+ATOI:
+    ; G0 = BUFFER
+    ; G1 = NUM
+    PUSH64 G2
+    MOV64 G1, 0
+ATOI_LOOP:
+    CMP8 [G0], 0
+    JE ATOI_EXIT
+    MOV8 G2, [G0]
+    SUB8 G2, 48
+    ADD64 G1, G2
+    CMP8 [G0+1], 0
+    JE ATOI_EXIT
+    MUL64 G1, 10
+    ADD64 G0, 1
+    JMP ATOI_LOOP
+ATOI_EXIT:
     POP64 G2
     RET

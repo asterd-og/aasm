@@ -1,20 +1,21 @@
 UPDATE_CURSOR:
-    MOV32 [0xB000], [CURSOR_X]
-    MOV32 [0xB004], [CURSOR_Y]
+    MOV32 [0x10000], [CURSOR_X]
+    MOV32 [0x10004], [CURSOR_Y]
     RET
 
 PUT_CHAR:
     ; X = G1
     ; Y = G2
     ; CH = G3
-    PUSH64 G4
     MOV64 G4, 0
     ; Y*WIDTH+X
     MOV32 G4, G2
-    MUL32 G4, 80
+    MUL32 G4, [0x10008]
     ADD32 G4, G1
-    MOV8 [0xB010+G4], G3
-    POP64 G4
+    MUL32 G4, 2
+    ADD32 G4, 0x10100
+    OR16 G3, 0x0200
+    MOV16 [G4], G3
     RET
 
 NEWLINE:

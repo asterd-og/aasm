@@ -159,7 +159,7 @@ def Tokenize(Input):
                 Id += Input[Index]
                 Index += 1
             Tokens.append(NewToken(TokenType.PreProc, Id.lower(), (Position[0], Position[1] - 1)))
-            Position[1] += len(Num)
+            Position[1] += len(Id)
         elif Input[Index] in SingleChars:
             Tokens.append(NewToken(SingleChars[Input[Index]], Input[Index], (Position[0], Position[1])))
             Index += 1
